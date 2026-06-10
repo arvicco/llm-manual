@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Residual Connections and Normalization: The Glue of Depth · Understanding LLMs</title>
+<link rel="stylesheet" href="style.css"></head><body>
+<nav class="toc" aria-label="Course contents">
+<a class="site" href="index.html"><strong>Understanding LLMs</strong><br>the complete course</a>
+<h3>Part I · The Forward Pass</h3><ol>
+<li><a href="00a-tokens-tokenizers-embeddings.html"><span class="code">00a</span><span>Tokens, Tokenizers & Embeddings</span></a></li>
+<li><a href="00b-attention.html"><span class="code">00b</span><span>Attention</span></a></li>
+<li><a href="00c-mlps-and-the-stack.html"><span class="code">00c</span><span>MLPs & the Stack</span></a></li>
+<li><a href="00d-position-and-rope.html"><span class="code">00d</span><span>Position & RoPE</span></a></li>
+<li><a class="cur" href="00e-residuals-and-normalization.html"><span class="code">00e</span><span>Residuals & Normalization</span></a></li>
+<li><a href="00f-logits-softmax-decoding.html"><span class="code">00f</span><span>Logits, Softmax & Decoding</span></a></li>
+<li><a href="00g-attention-variants-kv-cache.html"><span class="code">00g</span><span>Attention Variants & the KV Cache</span></a></li>
+</ol>
+<h3>Part II · Training & Alignment</h3><ol>
+<li><a href="01-how-training-works.html"><span class="code">01</span><span>How Training Works</span></a></li>
+<li><a href="02-pretraining-at-scale.html"><span class="code">02</span><span>Pretraining at Scale</span></a></li>
+<li><a href="03-post-training.html"><span class="code">03</span><span>Post-Training</span></a></li>
+<li><a href="04-reasoning-and-test-time-compute.html"><span class="code">04</span><span>Reasoning & Test-Time Compute</span></a></li>
+</ol>
+<h3>Part III · Efficiency & Deployment</h3><ol>
+<li><a href="05-mixture-of-experts.html"><span class="code">05</span><span>Mixture of Experts</span></a></li>
+<li><a href="06-quantization-and-local-inference.html"><span class="code">06</span><span>Quantization & Local Inference</span></a></li>
+<li><a href="07-serving-mechanics.html"><span class="code">07</span><span>Serving Mechanics</span></a></li>
+</ol>
+<h3>Part IV · Application & Assessment</h3><ol>
+<li><a href="08-adapting-and-extending.html"><span class="code">08</span><span>Adapting & Extending Models</span></a></li>
+<li><a href="09-capabilities-limits-evaluation.html"><span class="code">09</span><span>Capabilities, Limits & Evaluation</span></a></li>
+</ol>
+<h3>Part V · Beyond Text</h3><ol>
+<li><a href="09a-image-generation-diffusion.html"><span class="code">09a</span><span>Image Generation & Diffusion</span></a></li>
+<li><a href="09b-generative-paradigms.html"><span class="code">09b</span><span>The Wider Generative Landscape</span></a></li>
+<li><a href="09c-time-series-and-finance.html"><span class="code">09c</span><span>Time Series, Econometrics & Trading</span></a></li>
+</ol>
+<h3>Part VI · The Frontier</h3><ol>
+<li><a href="10-the-frontier.html"><span class="code">10</span><span>The Frontier</span></a></li>
+</ol>
+</nav>
+<div class="page"><main class="main">
+<a class="crumb" href="index.html">← Understanding LLMs · contents</a>
+<span class="eyebrow">Part I · The Forward Pass · chapter 00e</span>
+<h1>Residual Connections and Normalization: The Glue of Depth</h1>
+<article class="content">
+<p>Chapters 00b–00d described the interesting computation — attention, MLPs, position. This chapter covers the connective tissue that makes it possible to stack that computation 32 to 80 times and have the result train and behave: <em>residual connections</em> and <em>normalization</em>. Neither does anything glamorous; both are scaffolding. But without them, deep transformers are untrainable, and the mental model they enable — the <em>residual stream</em> — is the single most useful frame for thinking about what happens inside a model.</p>
+<h2 id="the-problem-gradients-across-depth">The problem: gradients across depth</h2>
+<p>By the time dozens of blocks are stacked, training (Chapter 1) must propagate an error signal backward through every one of them. At each step backward, the signal is multiplied by matrices and passed through function derivatives. If those multiplications shrink the signal on average, after 64 layers it has vanished — early layers receive gradients near zero and never learn. If they grow it, it explodes. <em>Vanishing and exploding gradients</em> are what made very deep networks impractical for years.</p>
+<h2 id="residual-connections-add-don-t-replace">Residual connections: add, don't replace</h2>
+<p>The fix came from computer vision — the 2015 ResNet paper (He et al.) — and is almost too simple to describe: instead of letting a layer's output <em>replace</em> its input, <em>add</em> it. If a layer computes function F on input x, its output is not F(x) but <strong>x + F(x)</strong>. The layer learns the <em>residual</em> — what to add — rather than the whole new representation. If the right thing for some layer to do with some input is nothing, it can learn F(x) ≈ 0 and pass x through untouched, a genuinely useful baseline.</p>
+<figure><img src="img/00e-residual-stream.png" alt="The residual stream: sub-layers read, normalize, compute, and add back; the additions are the gradient highway." loading="lazy"><figcaption><span class="fignum">Fig. 1</span> The residual stream: sub-layers read, normalize, compute, and add back; the additions are the gradient highway.</figcaption></figure>
+<p>The deeper reason this works is what it does to gradients. Backward through x + F(x), the error signal splits: one path through F (where it may be scaled arbitrarily), one path through the addition (where it passes with multiplier exactly 1, untouched). However badly F's path behaves, <em>some</em> gradient always reaches the layer below, undamped. Stack 64 of these and the gradient at the bottom is a sum over many paths, including direct ones — depth stops being fatal.</p>
+<p>In a transformer, residuals wrap <em>every</em> sub-layer — attention and MLP alike. The structure of a block is: read the running vector, compute attention, add the result back; read again, compute the MLP, add back. This justifies the <strong>residual stream</strong> picture used throughout this course and the interpretability literature: one vector per position flows vertically up the model like a stream; each sub-layer <em>reads</em> from it, computes an update, and <em>writes</em> the update back by addition. The stream is never overwritten, only accumulated into — so the original embedding, and every layer's contribution, survives to the top. By the final layer, each position's representation is the sum of the embedding plus 128 sub-layer contributions (64 attention + 64 MLP in an 64-block model). The model builds its representation by <em>accumulation</em>, not transformation — and Chapter 9's interpretability methods (features as directions, attribution graphs) are largely techniques for decomposing exactly this stream.</p>
+<h2 id="normalization-keeping-magnitudes-sane">Normalization: keeping magnitudes sane</h2>
+<p>Residuals solve gradient flow but create a second issue: a stream that only ever accumulates can grow without bound, and individual dimensions can drift to wildly different scales. Sub-layers would then face inputs of unpredictable magnitude — destabilizing training and pushing computation out of numerically comfortable ranges. <em>Normalization</em> rescales vectors at strategic points so every sub-layer sees well-behaved input.</p>
+<p>The transformer original is <em>Layer Normalization</em> (LayerNorm): take one token's vector, subtract the mean of its entries, divide by their standard deviation (now mean 0, spread 1), then apply a learned per-dimension scale and shift so the network can still produce whatever statistics it needs. The defining property — and the contrast with the older <em>Batch Normalization</em> — is that statistics are computed <em>within a single token's vector</em>, independent of other tokens and other examples, which is what sequence models need (tokens arrive one at a time at inference; batch composition must not change results).</p>
+<p>Placement turned out to matter as much as the operation. The 2017 design applied normalization <em>after</em> each sub-layer's addition (<em>post-norm</em>), which proved unstable at depth as the growing stream interacted badly with the normalization. Modern models are almost universally <strong><em>pre-norm</em></strong>: normalize a <em>copy</em> of the stream on the way <em>into</em> each sub-layer, and add the sub-layer's output back into the raw, un-normalized stream. The stream stays a pristine additive accumulator; normalization becomes each sub-layer's private input conditioning. Pre-norm trains markedly more stably at depth and is one of the quiet reasons today's 80-layer models are routine.</p>
+<p>Two modern refinements complete the picture. <em>RMSNorm</em> (Root Mean Square Normalization) simplifies LayerNorm — skip the mean subtraction and the learned shift, just divide by the root-mean-square of the entries and apply a learned scale. Empirically indistinguishable, computationally cheaper, and now the default across Llama, Qwen, DeepSeek, Mistral and peers. And several recent models (Qwen3, OLMo 2, Gemma's newer generations among them) add <strong><em>QK-norm</em></strong>: normalizing the query and key vectors <em>inside</em> attention, just before their dot product. The motivation is a specific instability — attention scores occasionally blowing up as Q and K magnitudes drift during training — and normalizing at the source caps it. It is a small change worth recognizing on architecture diagrams, and a good example of the genre this whole chapter represents: stability plumbing, invisible when it works.</p>
+<h2 id="the-picture-to-keep">The picture to keep</h2>
+<p>Residual connections turn every sub-layer's job from "produce a new representation" into "decide what to add," which gives gradients an undamped highway through arbitrary depth and gives the model a residual stream that accumulates contributions from embedding to output without ever erasing them. Normalization — RMSNorm, applied pre-norm, with QK-norm increasingly added inside attention — keeps the magnitudes flowing into each sub-layer predictable so the whole tower stays in its numerically and dynamically well-behaved regime. None of it is intelligence; all of it is the reason the intelligent parts can be stacked deep enough to matter.</p>
+</article>
+<nav class="pn"><a href="00d-position-and-rope.html"><span class="lbl">← previous</span>00d · Position & RoPE</a><a href="00f-logits-softmax-decoding.html" style="text-align:right"><span class="lbl">next →</span>00f · Logits, Softmax & Decoding</a></nav>
+<footer class="colo">Understanding LLMs · figures generated for this edition · June 2026</footer>
+</main></div></body></html>

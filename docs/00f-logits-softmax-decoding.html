@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>From Hidden State to Text: Logits, Softmax, and Decoding Policies · Understanding LLMs</title>
+<link rel="stylesheet" href="style.css"></head><body>
+<nav class="toc" aria-label="Course contents">
+<a class="site" href="index.html"><strong>Understanding LLMs</strong><br>the complete course</a>
+<h3>Part I · The Forward Pass</h3><ol>
+<li><a href="00a-tokens-tokenizers-embeddings.html"><span class="code">00a</span><span>Tokens, Tokenizers & Embeddings</span></a></li>
+<li><a href="00b-attention.html"><span class="code">00b</span><span>Attention</span></a></li>
+<li><a href="00c-mlps-and-the-stack.html"><span class="code">00c</span><span>MLPs & the Stack</span></a></li>
+<li><a href="00d-position-and-rope.html"><span class="code">00d</span><span>Position & RoPE</span></a></li>
+<li><a href="00e-residuals-and-normalization.html"><span class="code">00e</span><span>Residuals & Normalization</span></a></li>
+<li><a class="cur" href="00f-logits-softmax-decoding.html"><span class="code">00f</span><span>Logits, Softmax & Decoding</span></a></li>
+<li><a href="00g-attention-variants-kv-cache.html"><span class="code">00g</span><span>Attention Variants & the KV Cache</span></a></li>
+</ol>
+<h3>Part II · Training & Alignment</h3><ol>
+<li><a href="01-how-training-works.html"><span class="code">01</span><span>How Training Works</span></a></li>
+<li><a href="02-pretraining-at-scale.html"><span class="code">02</span><span>Pretraining at Scale</span></a></li>
+<li><a href="03-post-training.html"><span class="code">03</span><span>Post-Training</span></a></li>
+<li><a href="04-reasoning-and-test-time-compute.html"><span class="code">04</span><span>Reasoning & Test-Time Compute</span></a></li>
+</ol>
+<h3>Part III · Efficiency & Deployment</h3><ol>
+<li><a href="05-mixture-of-experts.html"><span class="code">05</span><span>Mixture of Experts</span></a></li>
+<li><a href="06-quantization-and-local-inference.html"><span class="code">06</span><span>Quantization & Local Inference</span></a></li>
+<li><a href="07-serving-mechanics.html"><span class="code">07</span><span>Serving Mechanics</span></a></li>
+</ol>
+<h3>Part IV · Application & Assessment</h3><ol>
+<li><a href="08-adapting-and-extending.html"><span class="code">08</span><span>Adapting & Extending Models</span></a></li>
+<li><a href="09-capabilities-limits-evaluation.html"><span class="code">09</span><span>Capabilities, Limits & Evaluation</span></a></li>
+</ol>
+<h3>Part V · Beyond Text</h3><ol>
+<li><a href="09a-image-generation-diffusion.html"><span class="code">09a</span><span>Image Generation & Diffusion</span></a></li>
+<li><a href="09b-generative-paradigms.html"><span class="code">09b</span><span>The Wider Generative Landscape</span></a></li>
+<li><a href="09c-time-series-and-finance.html"><span class="code">09c</span><span>Time Series, Econometrics & Trading</span></a></li>
+</ol>
+<h3>Part VI · The Frontier</h3><ol>
+<li><a href="10-the-frontier.html"><span class="code">10</span><span>The Frontier</span></a></li>
+</ol>
+</nav>
+<div class="page"><main class="main">
+<a class="crumb" href="index.html">← Understanding LLMs · contents</a>
+<span class="eyebrow">Part I · The Forward Pass · chapter 00f</span>
+<h1>From Hidden State to Text: Logits, Softmax, and Decoding Policies</h1>
+<article class="content">
+<p>After the input has passed through every block of the stack, each position holds a final vector — its <em>hidden state</em>, in decades-old neural-network jargon where "hidden" just means "internal," as opposed to the visible input tokens or output text. The final hidden state at the last position is the model's complete summary of everything before it. This chapter covers the two remaining steps between that vector and actual text: converting it into scores over the vocabulary, and then <em>choosing</em> — the choice being governed by a <em>decoding policy</em>, which is the most impactful knob available to a user after training is done.</p>
+<h2 id="the-output-projection-and-logits">The output projection and logits</h2>
+<p>The bridge problem: the hidden state is a vector of d_model numbers (say 4,096); what's needed is a choice among ~50,000–200,000 vocabulary tokens. The bridge is one more matrix multiplication. A learned <em>output matrix</em> (also called the <em>unembedding</em> or <em>language model head</em>) of shape d_model × vocab_size multiplies the final hidden state to produce one number per vocabulary token. Conceptually, each <em>column</em> of this matrix is a target pattern for one token — what the hidden state would need to look like for that token to be the natural continuation — and the multiplication measures, via dot products, how well the hidden state aligns with all 50,000 patterns at once. The whole job of the preceding layers was, in a sense, to steer the hidden state toward the patterns of plausible next tokens.</p>
+<figure><img src="img/00f-logits.png" alt="The last hidden state scored against every token’s output pattern, then softmaxed into a distribution." loading="lazy"><figcaption><span class="fignum">Fig. 1</span> The last hidden state scored against every token’s output pattern, then softmaxed into a distribution.</figcaption></figure>
+<p>The resulting raw scores are the <em>logits</em> (a term drifted from statistics, where a logit is a log-odds; in machine learning it just means pre-probability scores — any real values, positive or negative). One design note: the output matrix is shape-wise the transpose of the input embedding table (Chapter 00a), and some models literally share the two (<em>tied embeddings</em> — saving ~200M parameters and asserting that one vector represents "cat" both coming in and going out). GPT-2 ties; Llama does not; either way the conceptual reading is the same.</p>
+<p>Softmax — exponentiate every logit, divide by the sum — converts the logits to a probability distribution over the vocabulary: perhaps "the" 12%, "a" 8%, "trading" 5%, a long tail of diminishing probabilities across everything else. Now a token must be picked, and everything from here on is decoding policy.</p>
+<h2 id="the-fundamental-tension">The fundamental tension</h2>
+<p>At one extreme, always pick the highest-probability token. At the other, sample faithfully from the full distribution. Both fail, instructively. <strong>Greedy decoding</strong> (<em>argmax</em> — pick the maximum) is deterministic and fine for short factual outputs, but for open-ended text it is locally optimal and globally bland: the most-probable token at each step is by definition the most generic, the compounding result is lifeless text, and the notorious failure mode is the <em>repetition loop</em> — a phrase becomes likely, gets picked, makes itself likelier, repeats forever. It also cannot trade a slightly worse token now for much better continuations later. <strong>Pure sampling</strong> restores variety but gives the long tail too much collective weight: tens of thousands of individually-negligible tokens sum to 10–30% of total probability, so every few dozen steps the generation rolls a wildly improbable token and derails. Every practical policy navigates between these poles: biased toward the likely, with controlled randomness, and with the tail cut off.</p>
+<h2 id="the-standard-toolkit">The standard toolkit</h2>
+<p><strong>Temperature</strong> is a scalar T dividing the logits before softmax. Because softmax exponentiates, scaling the logit <em>differences</em> reshapes the distribution strongly: T &lt; 1 widens the differences and sharpens the distribution toward the top candidates; T &gt; 1 flattens it; T → 0 reduces to greedy; large T approaches uniform randomness. Typical practice: 0.2–0.5 for factual or structured tasks, 0.7–1.0 general, higher for creative work.</p>
+<figure><img src="img/00f-decoding-policies.png" alt="One distribution, three policies: the same weights produce very different text." loading="lazy"><figcaption><span class="fignum">Fig. 2</span> One distribution, three policies: the same weights produce very different text.</figcaption></figure>
+<p><strong>Top-k</strong> truncates the tail by fiat: keep only the k highest-probability tokens, renormalize, sample. Effective but rigid — k = 50 keeps 48 useless tokens when the distribution is peaked and amputates legitimate candidates when it is flat. <strong>Top-p</strong> (<em>nucleus sampling</em>, Holtzman et al. 2018) adapts instead: keep the smallest set of tokens whose cumulative probability exceeds p (typically 0.9–0.95). The kept set — the nucleus — automatically shrinks to two or three tokens when the model is confident and grows to dozens when it is uncertain. The 2018 paper's deeper observation explains why all this beats likelihood-maximization: human text is <em>not</em> the maximum-probability text under the model — natural writing has more variation than the model's mode — so good open-ended generation wants a <em>typical sample</em>, not the most probable sequence. The same observation explains why <strong>beam search</strong> — maintaining k candidate sequences in parallel and keeping the highest cumulative-probability ones, the standard in machine translation where outputs are tightly constrained — fell out of favor for open-ended generation: it finds the mode, and the mode is repetitive. A newer alternative worth knowing, <strong>min-p</strong>, keeps tokens whose probability is at least some fraction (e.g. 10%) of the top token's — another adaptive truncation with somewhat different behavior at high temperatures.</p>
+<p>The standard modern recipe composes these: logits ÷ temperature → softmax → top-p truncation → sample, with most APIs exposing temperature and top-p (and recommending tuning one, not both — they pull on the same thing). Layered on top for specific needs: <strong>repetition penalties</strong> (downweight tokens already generated — frequency and presence variants), <strong>stop sequences</strong> (terminate generation at a marker), and <strong>logit bias</strong> (manually push named tokens up or down). And one extension covered fully in Chapter 7 deserves a pointer here because it is the same machinery taken to its logical end: <strong>constrained decoding</strong> masks every token that would violate a grammar or JSON schema to negative infinity before sampling, making structurally valid output <em>guaranteed</em> rather than requested.</p>
+<h2 id="the-autoregressive-loop">The autoregressive loop</h2>
+<p>Once a token is picked, it is appended to the sequence and the whole forward pass runs again; the new last position yields new logits; sample, append, repeat. This loop — each step's output becoming the next step's input — is <em>autoregressive generation</em>, and it is the entirety of how transformer language models produce text. The one essential implementation fact: the keys and values of previous positions don't change between steps, so they are cached rather than recomputed — the <em>KV cache</em>, the protagonist of Chapter 00g and the central object of inference economics (Chapters 6–7). And the conceptual fact with the longest reach: because each generated token is computed by a full forward pass and then becomes context for the next, generation length is a <em>computational budget</em> — the observation that Chapter 4 builds into the entire reasoning-model paradigm.</p>
+<h2 id="the-picture-to-keep">The picture to keep</h2>
+<p>A final matrix turns the last hidden state into one alignment score per vocabulary token (logits); softmax turns scores into probabilities; and the decoding policy turns probabilities into a choice — balancing the model's likelihoods against the practical failure modes of blandness (greedy), derailment (pure sampling), and repetition. Temperature shapes the distribution, nucleus sampling trims its tail adaptively, and a handful of auxiliary controls handle repetition, stopping, and structure. None of it touches the model's weights — yet the same weights produce flat, looping text under one policy and lively, coherent text under another, which makes the decoding policy the cheapest meaningful lever in the entire stack.</p>
+</article>
+<nav class="pn"><a href="00e-residuals-and-normalization.html"><span class="lbl">← previous</span>00e · Residuals & Normalization</a><a href="00g-attention-variants-kv-cache.html" style="text-align:right"><span class="lbl">next →</span>00g · Attention Variants & the KV Cache</a></nav>
+<footer class="colo">Understanding LLMs · figures generated for this edition · June 2026</footer>
+</main></div></body></html>

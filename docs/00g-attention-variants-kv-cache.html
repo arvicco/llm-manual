@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Attention Variants and the KV Cache: MHA, MQA, GQA, MLA · Understanding LLMs</title>
+<link rel="stylesheet" href="style.css"></head><body>
+<nav class="toc" aria-label="Course contents">
+<a class="site" href="index.html"><strong>Understanding LLMs</strong><br>the complete course</a>
+<h3>Part I · The Forward Pass</h3><ol>
+<li><a href="00a-tokens-tokenizers-embeddings.html"><span class="code">00a</span><span>Tokens, Tokenizers & Embeddings</span></a></li>
+<li><a href="00b-attention.html"><span class="code">00b</span><span>Attention</span></a></li>
+<li><a href="00c-mlps-and-the-stack.html"><span class="code">00c</span><span>MLPs & the Stack</span></a></li>
+<li><a href="00d-position-and-rope.html"><span class="code">00d</span><span>Position & RoPE</span></a></li>
+<li><a href="00e-residuals-and-normalization.html"><span class="code">00e</span><span>Residuals & Normalization</span></a></li>
+<li><a href="00f-logits-softmax-decoding.html"><span class="code">00f</span><span>Logits, Softmax & Decoding</span></a></li>
+<li><a class="cur" href="00g-attention-variants-kv-cache.html"><span class="code">00g</span><span>Attention Variants & the KV Cache</span></a></li>
+</ol>
+<h3>Part II · Training & Alignment</h3><ol>
+<li><a href="01-how-training-works.html"><span class="code">01</span><span>How Training Works</span></a></li>
+<li><a href="02-pretraining-at-scale.html"><span class="code">02</span><span>Pretraining at Scale</span></a></li>
+<li><a href="03-post-training.html"><span class="code">03</span><span>Post-Training</span></a></li>
+<li><a href="04-reasoning-and-test-time-compute.html"><span class="code">04</span><span>Reasoning & Test-Time Compute</span></a></li>
+</ol>
+<h3>Part III · Efficiency & Deployment</h3><ol>
+<li><a href="05-mixture-of-experts.html"><span class="code">05</span><span>Mixture of Experts</span></a></li>
+<li><a href="06-quantization-and-local-inference.html"><span class="code">06</span><span>Quantization & Local Inference</span></a></li>
+<li><a href="07-serving-mechanics.html"><span class="code">07</span><span>Serving Mechanics</span></a></li>
+</ol>
+<h3>Part IV · Application & Assessment</h3><ol>
+<li><a href="08-adapting-and-extending.html"><span class="code">08</span><span>Adapting & Extending Models</span></a></li>
+<li><a href="09-capabilities-limits-evaluation.html"><span class="code">09</span><span>Capabilities, Limits & Evaluation</span></a></li>
+</ol>
+<h3>Part V · Beyond Text</h3><ol>
+<li><a href="09a-image-generation-diffusion.html"><span class="code">09a</span><span>Image Generation & Diffusion</span></a></li>
+<li><a href="09b-generative-paradigms.html"><span class="code">09b</span><span>The Wider Generative Landscape</span></a></li>
+<li><a href="09c-time-series-and-finance.html"><span class="code">09c</span><span>Time Series, Econometrics & Trading</span></a></li>
+</ol>
+<h3>Part VI · The Frontier</h3><ol>
+<li><a href="10-the-frontier.html"><span class="code">10</span><span>The Frontier</span></a></li>
+</ol>
+</nav>
+<div class="page"><main class="main">
+<a class="crumb" href="index.html">← Understanding LLMs · contents</a>
+<span class="eyebrow">Part I · The Forward Pass · chapter 00g</span>
+<h1>Attention Variants and the KV Cache: MHA, MQA, GQA, MLA</h1>
+<article class="content">
+<p>This closing chapter of the forward-pass part revisits attention with one question: at inference time, what must actually be stored? The answer — the <em>KV cache</em> — is the single most important object in inference economics, referenced constantly in Chapters 4 through 7, and the architectural variants that manage it (the MQA/GQA/MLA family) are now a standard line on every model card.</p>
+<h2 id="why-the-cache-exists">Why the cache exists</h2>
+<p>Training processes a whole sequence in one parallel pass; nothing special is stored. Generation (Chapter 00f) is different: each new token's attention must compare against the keys, and weighted-sum the values, of <em>every previous position</em>. Recomputing those keys and values at every step would be absurd — they are determined by the earlier tokens, which haven't changed. So they are computed once and kept: the <strong>KV cache</strong>. Each generation step computes K and V only for the newest token and appends them.</p>
+<figure><img src="img/00g-cache-growth.png" alt="Why this chapter exists: at long context the cache, not the weights, is the binding constraint." loading="lazy"><figcaption><span class="fignum">Fig. 1</span> Why this chapter exists: at long context the cache, not the weights, is the binding constraint.</figcaption></figure>
+<p>This makes generation cheap per step but creates a memory object that grows linearly with context, forever, for every concurrent session. The size per token: for each of L layers and H heads, a key and a value vector of head dimension d_h, at 2 bytes per number — 2 × L × H × d_h × 2 bytes. For a 70B-class fully multi-headed model (L = 80, H = 64, d_h = 128) that is ~2.6 MB <em>per token</em>: a 32,000-token context costs ~80 GB of cache — comparable to the weights themselves, and growing past them at longer contexts. Unlike weights, the cache scales with context and with concurrent users. This is the problem the variants below are competing solutions to.</p>
+<h2 id="mha-the-baseline">MHA: the baseline</h2>
+<p>Classic <strong>multi-head attention</strong> (MHA), as built in Chapter 00b, gives every head its own private query, key, <em>and</em> value projections. Maximally flexible — each head asks its own questions against its own advertisements and payloads — and maximally expensive: the cache stores a full K and V per head per layer per token. The numbers above assume MHA.</p>
+<h2 id="the-asymmetry-and-mqa">The asymmetry, and MQA</h2>
+<p>The insight enabling everything else (Shazeer, 2019): heads <em>need</em> distinct queries — head-specific questions are the whole point of multi-head attention — but they don't equally need distinct keys and values. Every head is looking at the same tokens; in principle they could share one set of descriptions and payloads while asking different questions of them.</p>
+<figure><img src="img/00g-variants.png" alt="The dial: queries stay private, keys and values get shared — not at all, in groups, or entirely." loading="lazy"><figcaption><span class="fignum">Fig. 2</span> The dial: queries stay private, keys and values get shared — not at all, in groups, or entirely.</figcaption></figure>
+<p><strong>Multi-Query Attention</strong> (MQA) takes this to the limit: all H query heads, but exactly <em>one</em> shared key head and one value head. The cache shrinks by a factor of H — 64× in our example, 80 GB down to ~1.3 GB at 32K context. The cost is expressiveness: every query competes against the same single key/value set, squeezing the specialization of Chapter 00b's heads (syntax, coreference, induction — each plausibly wanting different keys and values) through one bottleneck. MQA models measurably underperform matched MHA models; PaLM used it, but the field moved to the compromise.</p>
+<h2 id="gqa-the-production-standard">GQA: the production standard</h2>
+<p><strong>Grouped-Query Attention</strong> (GQA, Ainslie et al. 2023) shares K/V heads across <em>groups</em> of query heads: 64 query heads in 8 groups of 8 means 8 K and 8 V heads — an 8× cache reduction (80 GB → ~10 GB) with most of MHA's expressiveness intact, since each group keeps dedicated keys and values. GQA is the default of the modern open-weight era: Llama 3 uses 8 KV heads at every scale (32 query heads at 8B, 64 at 70B, 128 at 405B — group sizes 4, 8, 16); Mistral, Qwen, and others likewise. Smaller groups buy quality at cache cost; 8 KV heads became the conventional sweet spot for 7B–70B models.</p>
+<p>Note what these variants do <em>not</em> change: the attention math — scaled dot products, softmax, weighted values — is identical; only the number of independent K/V projections, and therefore the cache footprint and a slice of parameter count, differs. Training is unchanged.</p>
+<h2 id="beyond-sharing-mla-sliding-windows-and-flashattention">Beyond sharing: MLA, sliding windows, and FlashAttention</h2>
+<p>Three further techniques attack the same pressures from different angles, completing the standard toolkit.</p>
+<p><strong>Multi-Latent Attention</strong> (MLA, introduced by DeepSeek in 2024 and a key reason their very large models serve cheaply) compresses rather than shares: keys and values are projected down into a small shared <em>latent</em> vector per token — the only thing cached — and decompressed on the fly when attention needs them. The cache shrinks below even aggressive GQA while preserving more expressiveness, at the cost of extra computation and engineering; it is the current direction of travel for cache efficiency, and the spiritual ancestor of the learned <em>sparse attention</em> in the same lab's later models (Chapter 10).</p>
+<p><strong>Sliding-window attention</strong> (Mistral popularized it) limits the <em>reach</em> instead of the per-token size: attend only to the most recent W tokens (e.g. 4,096) and discard older K/V entirely — constant memory regardless of context, at the price of no direct long-range attention, so it is used in hybrid form, with some full-attention layers retained for global reach. This local/global layer-mixing pattern is the direct precursor of Chapter 10's linear-attention hybrids, which replace the windowed layers with constant-cost recurrent ones.</p>
+<p><strong>FlashAttention</strong> (Dao et al., 2022) is different in kind: not an architectural variant but an <em>exact algorithm</em> for computing standard attention without ever materializing the full N×N score matrix in slow GPU memory — processing it in tiles inside fast on-chip memory. Same model, bit-for-bit-equivalent outputs, dramatically faster and more memory-efficient at long sequences; it composes with MHA, GQA, or MLA and is simply how attention is computed in every serious system now.</p>
+<h2 id="the-picture-to-keep">The picture to keep</h2>
+<p>Generation stores every past token's keys and values — the KV cache — and that cache, not the weights, is what grows with context and concurrency, making it the binding constraint of long-context inference. The variant family is a dial on one asymmetry: queries must stay per-head, keys and values can be shared — fully (MQA, maximal savings, real quality cost), in groups (GQA, the production standard), or compressed into latents (MLA, the frontier). Sliding windows bound the cache by forgetting; FlashAttention computes whatever variant you chose without waste. On a fixed memory budget, these choices are the difference between a model that fits with room for context and one that doesn't fit at all — which is exactly where Part III of this course (Chapters 5–7) picks up the story.</p>
+</article>
+<nav class="pn"><a href="00f-logits-softmax-decoding.html"><span class="lbl">← previous</span>00f · Logits, Softmax & Decoding</a><a href="01-how-training-works.html" style="text-align:right"><span class="lbl">next →</span>01 · How Training Works</a></nav>
+<footer class="colo">Understanding LLMs · figures generated for this edition · June 2026</footer>
+</main></div></body></html>

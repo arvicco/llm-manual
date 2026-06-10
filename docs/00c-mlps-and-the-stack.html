@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MLPs and the Stack · Understanding LLMs</title>
+<link rel="stylesheet" href="style.css"></head><body>
+<nav class="toc" aria-label="Course contents">
+<a class="site" href="index.html"><strong>Understanding LLMs</strong><br>the complete course</a>
+<h3>Part I · The Forward Pass</h3><ol>
+<li><a href="00a-tokens-tokenizers-embeddings.html"><span class="code">00a</span><span>Tokens, Tokenizers & Embeddings</span></a></li>
+<li><a href="00b-attention.html"><span class="code">00b</span><span>Attention</span></a></li>
+<li><a class="cur" href="00c-mlps-and-the-stack.html"><span class="code">00c</span><span>MLPs & the Stack</span></a></li>
+<li><a href="00d-position-and-rope.html"><span class="code">00d</span><span>Position & RoPE</span></a></li>
+<li><a href="00e-residuals-and-normalization.html"><span class="code">00e</span><span>Residuals & Normalization</span></a></li>
+<li><a href="00f-logits-softmax-decoding.html"><span class="code">00f</span><span>Logits, Softmax & Decoding</span></a></li>
+<li><a href="00g-attention-variants-kv-cache.html"><span class="code">00g</span><span>Attention Variants & the KV Cache</span></a></li>
+</ol>
+<h3>Part II · Training & Alignment</h3><ol>
+<li><a href="01-how-training-works.html"><span class="code">01</span><span>How Training Works</span></a></li>
+<li><a href="02-pretraining-at-scale.html"><span class="code">02</span><span>Pretraining at Scale</span></a></li>
+<li><a href="03-post-training.html"><span class="code">03</span><span>Post-Training</span></a></li>
+<li><a href="04-reasoning-and-test-time-compute.html"><span class="code">04</span><span>Reasoning & Test-Time Compute</span></a></li>
+</ol>
+<h3>Part III · Efficiency & Deployment</h3><ol>
+<li><a href="05-mixture-of-experts.html"><span class="code">05</span><span>Mixture of Experts</span></a></li>
+<li><a href="06-quantization-and-local-inference.html"><span class="code">06</span><span>Quantization & Local Inference</span></a></li>
+<li><a href="07-serving-mechanics.html"><span class="code">07</span><span>Serving Mechanics</span></a></li>
+</ol>
+<h3>Part IV · Application & Assessment</h3><ol>
+<li><a href="08-adapting-and-extending.html"><span class="code">08</span><span>Adapting & Extending Models</span></a></li>
+<li><a href="09-capabilities-limits-evaluation.html"><span class="code">09</span><span>Capabilities, Limits & Evaluation</span></a></li>
+</ol>
+<h3>Part V · Beyond Text</h3><ol>
+<li><a href="09a-image-generation-diffusion.html"><span class="code">09a</span><span>Image Generation & Diffusion</span></a></li>
+<li><a href="09b-generative-paradigms.html"><span class="code">09b</span><span>The Wider Generative Landscape</span></a></li>
+<li><a href="09c-time-series-and-finance.html"><span class="code">09c</span><span>Time Series, Econometrics & Trading</span></a></li>
+</ol>
+<h3>Part VI · The Frontier</h3><ol>
+<li><a href="10-the-frontier.html"><span class="code">10</span><span>The Frontier</span></a></li>
+</ol>
+</nav>
+<div class="page"><main class="main">
+<a class="crumb" href="index.html">← Understanding LLMs · contents</a>
+<span class="eyebrow">Part I · The Forward Pass · chapter 00c</span>
+<h1>MLPs and the Stack</h1>
+<article class="content">
+<p>Attention (Chapter 00b) enriches every token's vector with relevant information from other positions — "it" has had some "cat" blended into it. But notice what attention can and cannot do. Mathematically, attention takes weighted averages of value vectors: fundamentally <em>rearrangement</em> — moving and combining information that already exists. What it cannot really do is <em>compute</em> on the result: take the combined representation and transform it into something new. For that, the transformer has a second block: the MLP.</p>
+<p><em>MLP</em> stands for <em>multilayer perceptron</em> — decades-old jargon for a basic feedforward neural network: layers of units that each take inputs, multiply by weights, sum, and apply a function. In a transformer, "the MLP block" (also called the feedforward block, or FFN) is a small two-step network applied to each token's vector independently, after attention.</p>
+<h2 id="why-a-nonlinearity-is-the-whole-point">Why a nonlinearity is the whole point</h2>
+<p>The block's structure follows from one concept: <em>linearity</em>. A linear operation is anything expressible as a matrix multiplication. The crucial property of linear operations is that composing them yields just another linear operation — stack ten matrix multiplications and you could collapse them into one matrix with identical behavior. No amount of stacking linear layers escapes what a single matrix can express. To break the ceiling you must insert something <em>nonlinear</em> — a function that bends the signal in a way no matrix can. The simplest classic is <em>ReLU</em> (rectified linear unit): pass positive inputs through, zero out negatives. Sandwich a nonlinearity between two linear layers and the resulting network can, with enough width, approximate essentially any reasonable function.</p>
+<figure><img src="img/00c-mlp-sandwich.png" alt="The MLP sandwich: project up, gate and bend, project down, add back — per token, no cross-talk." loading="lazy"><figcaption><span class="fignum">Fig. 1</span> The MLP sandwich: project up, gate and bend, project down, add back — per token, no cross-talk.</figcaption></figure>
+<p>The MLP block is exactly that sandwich, applied per token: <strong>project up</strong> to a wider intermediate dimension (a learned matrix maps the 4,096-dimensional token vector to, classically, ~4× that — 16,384 — giving the computation more independent "slots"); <strong>apply the nonlinearity</strong> element-wise; <strong>project back down</strong> to the original width with a second learned matrix; and add the result into the token's running representation. The classical transformer nonlinearity is <em>GELU</em> (Gaussian Error Linear Unit), a smooth ReLU-like curve. Modern open models (Llama, Qwen, DeepSeek, Mistral) use <em>SwiGLU</em>, a <em>gated</em> variant: two parallel up-projections, one passed through a smooth function and multiplied element-wise against the other, so each slot's contribution is dynamically scaled — gated — by its partner. One sizing detail worth knowing because you will meet it reading model configs: since SwiGLU adds a third matrix, models using it shrink the intermediate dimension to roughly two-thirds of the classical 4× (Llama-style models use about 2.7× d_model) so the block's total parameter count stays comparable. The specific nonlinearity matters less than that there is one; the field has cycled through several and will cycle through more.</p>
+<p>Crucially, there is no cross-token interaction anywhere in this block: run it on one token or a thousand and each result is identical. This is why Chapter 00b could claim attention is the <em>only</em> place information crosses positions.</p>
+<h2 id="two-facts-that-make-mlps-matter">Two facts that make MLPs matter</h2>
+<p>First, <em>parameters</em>. The wide intermediate means MLPs hold most of the model's weights — roughly two-thirds in Llama-style dense models, about twice the per-layer share of attention. When a model is quoted at 70 billion parameters, most of that lives here (and it is precisely this block that Mixture of Experts, Chapter 5, makes sparse).</p>
+<figure><img src="img/00c-param-split.png" alt="Where the weights are: the MLP majority is also where the knowledge appears to live." loading="lazy"><figcaption><span class="fignum">Fig. 2</span> Where the weights are: the MLP majority is also where the knowledge appears to live.</figcaption></figure>
+<p>Second, <em>function</em>. The leading interpretability hypothesis is that MLPs act as <em>key-value memories</em>. Read the up-projection as a bank of stored <em>patterns</em> (one per intermediate slot — 16,384 of them) and the down-projection as a bank of stored <em>responses</em>. An incoming token vector is compared against every pattern at once (that is what the up-projection's dot products do); slots whose patterns match activate; activated slots write their responses back into the vector. Structurally an associative memory: look up by pattern, retrieve by content. Interpretability work finds individual slots responding to recognizable concepts — Paris-related tokens, past-tense verbs, lines of Python — supporting the picture that MLPs are where knowledge and learned procedures live. The pithy division of labor: <strong>attention moves information; MLPs do the thinking.</strong></p>
+<h2 id="stacking-the-transformer-block-and-the-depth-dimension">Stacking: the transformer block and the depth dimension</h2>
+<p>A <em>transformer block</em> (or layer) is one attention sub-layer followed by one MLP sub-layer. Modern language models stack 32 to 80+ such blocks; each round gathers whatever context is currently relevant, then processes it, and by the final layer each position's vector has been through dozens of gather-process cycles. The sub-layers' outputs are <em>added</em> to a running representation rather than replacing it — the residual connection, whose full treatment (and the "residual stream" mental model) is Chapter 00e.</p>
+<p>A natural question: across those 32–80 layers, what is shared and what is distinct? <strong>The parameters: completely distinct.</strong> Every layer has its own independent attention matrices, MLP matrices, and normalization parameters — a 32-layer model contains 32 separate copies of the block's weight set, which is why parameter count grows linearly with depth. This matters because layers learn a division of labor: interpretability consistently finds early layers handling surface and syntactic features, middle layers doing conceptual integration (entities, abstractions), late layers sharpening the concrete next-token prediction. None of this is designed in; the architecture offers identically-shaped slots, and training discovers the specialization. <strong>The nonlinearity: identical everywhere.</strong> It is a fixed architectural choice with no learned parameters of its own (SwiGLU's <em>gate projection</em> is learned and per-layer like any matrix, but the structural rule is the same in every block). Same blueprint repeated up the stack; different filling in every copy. (The exception proves the rule: <em>weight-tied</em> designs reusing one block repeatedly — Universal Transformers, ALBERT — save memory but underperform at equal compute and are absent from production LLMs; though note that Chapter 10's recurrent-depth models revive the idea for a different purpose, buying test-time computation by looping shared layers.)</p>
+<h2 id="the-picture-to-keep">The picture to keep</h2>
+<p>After attention gathers context, each token's vector independently passes through a learned pattern-match-and-retrieve engine: up-project against thousands of stored patterns, gate through a nonlinearity, write back the matched responses. This block holds most of the parameters and, on current understanding, most of the knowledge. One attention plus one MLP makes a block; a few dozen blocks with fully independent weights, connected by an additive running stream, make the body of the model — with the glue that makes such depth trainable at all (residuals and normalization) coming in Chapter 00e, after position is dealt with in Chapter 00d.</p>
+</article>
+<nav class="pn"><a href="00b-attention.html"><span class="lbl">← previous</span>00b · Attention</a><a href="00d-position-and-rope.html" style="text-align:right"><span class="lbl">next →</span>00d · Position & RoPE</a></nav>
+<footer class="colo">Understanding LLMs · figures generated for this edition · June 2026</footer>
+</main></div></body></html>

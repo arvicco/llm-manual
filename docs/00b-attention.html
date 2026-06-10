@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Attention: How the Sequence Connects · Understanding LLMs</title>
+<link rel="stylesheet" href="style.css"></head><body>
+<nav class="toc" aria-label="Course contents">
+<a class="site" href="index.html"><strong>Understanding LLMs</strong><br>the complete course</a>
+<h3>Part I · The Forward Pass</h3><ol>
+<li><a href="00a-tokens-tokenizers-embeddings.html"><span class="code">00a</span><span>Tokens, Tokenizers & Embeddings</span></a></li>
+<li><a class="cur" href="00b-attention.html"><span class="code">00b</span><span>Attention</span></a></li>
+<li><a href="00c-mlps-and-the-stack.html"><span class="code">00c</span><span>MLPs & the Stack</span></a></li>
+<li><a href="00d-position-and-rope.html"><span class="code">00d</span><span>Position & RoPE</span></a></li>
+<li><a href="00e-residuals-and-normalization.html"><span class="code">00e</span><span>Residuals & Normalization</span></a></li>
+<li><a href="00f-logits-softmax-decoding.html"><span class="code">00f</span><span>Logits, Softmax & Decoding</span></a></li>
+<li><a href="00g-attention-variants-kv-cache.html"><span class="code">00g</span><span>Attention Variants & the KV Cache</span></a></li>
+</ol>
+<h3>Part II · Training & Alignment</h3><ol>
+<li><a href="01-how-training-works.html"><span class="code">01</span><span>How Training Works</span></a></li>
+<li><a href="02-pretraining-at-scale.html"><span class="code">02</span><span>Pretraining at Scale</span></a></li>
+<li><a href="03-post-training.html"><span class="code">03</span><span>Post-Training</span></a></li>
+<li><a href="04-reasoning-and-test-time-compute.html"><span class="code">04</span><span>Reasoning & Test-Time Compute</span></a></li>
+</ol>
+<h3>Part III · Efficiency & Deployment</h3><ol>
+<li><a href="05-mixture-of-experts.html"><span class="code">05</span><span>Mixture of Experts</span></a></li>
+<li><a href="06-quantization-and-local-inference.html"><span class="code">06</span><span>Quantization & Local Inference</span></a></li>
+<li><a href="07-serving-mechanics.html"><span class="code">07</span><span>Serving Mechanics</span></a></li>
+</ol>
+<h3>Part IV · Application & Assessment</h3><ol>
+<li><a href="08-adapting-and-extending.html"><span class="code">08</span><span>Adapting & Extending Models</span></a></li>
+<li><a href="09-capabilities-limits-evaluation.html"><span class="code">09</span><span>Capabilities, Limits & Evaluation</span></a></li>
+</ol>
+<h3>Part V · Beyond Text</h3><ol>
+<li><a href="09a-image-generation-diffusion.html"><span class="code">09a</span><span>Image Generation & Diffusion</span></a></li>
+<li><a href="09b-generative-paradigms.html"><span class="code">09b</span><span>The Wider Generative Landscape</span></a></li>
+<li><a href="09c-time-series-and-finance.html"><span class="code">09c</span><span>Time Series, Econometrics & Trading</span></a></li>
+</ol>
+<h3>Part VI · The Frontier</h3><ol>
+<li><a href="10-the-frontier.html"><span class="code">10</span><span>The Frontier</span></a></li>
+</ol>
+</nav>
+<div class="page"><main class="main">
+<a class="crumb" href="index.html">← Understanding LLMs · contents</a>
+<span class="eyebrow">Part I · The Forward Pass · chapter 00b</span>
+<h1>Attention: How the Sequence Connects</h1>
+<article class="content">
+<p>After the embedding step, every token is a vector — but the vectors are isolated from each other. The vector for "it" in "The cat sat on the mat. It purred." is exactly the same as for any other "it", because it is just row "it" of the embedding table. The model has no way yet to know that <em>this</em> "it" refers to a cat. What is needed is a mechanism that lets each token's vector be modified based on the other tokens — a way for tokens to look at each other and exchange information. Attention is that mechanism, and it is the <em>only</em> place in the transformer where information moves between positions. Everything else — the MLPs, the nonlinearities, the normalization — operates on each token's vector independently. Remove attention and you have a stack of per-token operations that could never get "cat" into "it".</p>
+<p>The name encodes the intuition: reading "it", you implicitly look back for its referent, paying <em>selective</em> attention — "cat" matters; "sat", "on", "the" are background. The mechanism makes this selective looking explicit, through arithmetic: for each token, compute how much attention to pay to every previous token, then mix in their information accordingly.</p>
+<h2 id="queries-keys-values">Queries, keys, values</h2>
+<p>The math is built around three derived vectors computed for every token, best understood through a search metaphor. Each token presents three facets. Its <strong>query</strong> is the question it asks: <em>what information am I looking for?</em> For "it", something like "I'm a singular pronoun seeking a recently-mentioned noun." Its <strong>key</strong> is the advertisement it broadcasts: <em>what kind of thing am I, available for lookup?</em> For "cat": "singular animate noun, candidate antecedent." Its <strong>value</strong> is the payload it offers: <em>if you find me relevant, here is what you receive</em> — the semantic content of "cat": furry, four-legged, pet.</p>
+<p>These three vectors are not stored anywhere; they are computed fresh by multiplying the token's current vector by three learned matrices — the query, key, and value projections, parameters of the model learned during training like everything else (they are typically somewhat smaller in dimension than the token vector itself). Nobody tells the model what questions are useful to ask or what advertisements to broadcast; useful ones emerge because they reduce prediction error.</p>
+<h2 id="the-mechanism-step-by-step">The mechanism, step by step</h2>
+<p>Pick a position — say position 7. Take its query vector and compare it against the key vector of every position up to and including itself. The comparison is a <em>dot product</em>: multiply the two vectors element-wise and sum. Geometrically this measures alignment — vectors pointing in similar directions through the high-dimensional space yield a large positive number, perpendicular ones yield zero, opposed ones a large negative. The dot product of "it"'s query with "cat"'s key collapses to a single number expressing how well the question matches the advertisement.</p>
+<figure><img src="img/00b-qkv.png" alt="One head, one query: “It” asks, every earlier key answers, softmax sets the proportions, the values blend." loading="lazy"><figcaption><span class="fignum">Fig. 1</span> One head, one query: “It” asks, every earlier key answers, softmax sets the proportions, the values blend.</figcaption></figure>
+<p>One detail belongs here that introductory accounts (including the earlier version of this explanation) often omit: before going further, the raw scores are <strong>divided by the square root of the key vector's dimension</strong>. The reason is statistical: dot products of high-dimensional vectors naturally grow with dimension (more terms in the sum), and unscaled scores would push the next step — softmax — into a saturated regime where one position takes essentially all the weight and gradients vanish. The √d scaling keeps scores in a well-behaved range regardless of head size. This is why the operation is formally called <em>scaled</em> dot-product attention.</p>
+<p>The scaled scores — one per earlier position — are passed through <em>softmax</em>, which converts a list of arbitrary numbers into a probability distribution: exponentiate each, divide by the sum, yielding positive numbers summing to 1, with larger scores taking disproportionately larger shares. The results are the <em>attention weights</em>: position 7 might distribute 62% of its attention to position 5, 18% to position 0, scraps elsewhere.</p>
+<p>Now use the weights to mix the <strong>value</strong> vectors: multiply each earlier position's value by its attention weight and sum. The output is a custom blend of payloads, dominated by whatever the query found relevant. This blended vector is attention's contribution for position 7, and it is <em>added into</em> position 7's running representation (the additive part is the residual connection, treated fully in Chapter 00e). Do this for every position simultaneously — each with its own query — and one round of attention is complete: every token's vector now carries context.</p>
+<h2 id="the-causal-mask">The causal mask</h2>
+<p>One rule is specific to language models that generate left to right. During training, the model's job at every position is to predict the <em>next</em> token (Chapter 1), and letting a position attend to later positions would be peeking at the answer. So attention is <em>causally masked</em>: position 7 may attend to positions 0–7 only; later positions are forcibly excluded by setting their pre-softmax scores to negative infinity, which softmax maps to exactly zero weight. "Causal" means information flows only from past to future. (Other transformer uses — embeddings models, image patches in Chapter 09a — use <em>bidirectional</em> attention with no mask, because nothing is being predicted left-to-right.)</p>
+<figure><img src="img/00b-causal-mask.png" alt="The causal mask: each row may only attend to its own past; the future is set to −∞ before softmax." loading="lazy"><figcaption><span class="fignum">Fig. 2</span> The causal mask: each row may only attend to its own past; the future is set to −∞ before softmax.</figcaption></figure>
+<h2 id="multi-head-attention">Multi-head attention</h2>
+<p>What is described so far is a single <em>head</em>. In practice every layer runs many heads in parallel — 32 to 128 in current models — each with its own learned query, key, and value matrices, hence its own notion of what to ask, advertise, and provide. The point is specialization: after training, different heads demonstrably handle different relationships — some track syntax (verbs to subjects), some coreference (pronouns to antecedents — the "it"→"cat" case), some <em>induction</em> patterns ("where did this sequence appear before, and what followed it?" — machinery that Chapter 9 connects to in-context learning). Each head works in a lower-dimensional subspace (the token vector's dimensions divided among the heads), and when all heads finish, their outputs are concatenated and passed through one more learned matrix — the <em>output projection</em> — that mixes them back into a single contribution of the original width.</p>
+<h2 id="why-this-won">Why this won</h2>
+<p>The property that made transformers displace what preceded them is the <em>directness</em> of connection. In recurrent architectures, information from position 3 reaching position 4,000 had to survive 3,997 sequential hand-offs, compressed and distorted at each. In attention, position 4,000 looks <em>directly</em> at position 3 — one dot product, and if relevance is high, the value flows straight in, undegraded by distance. This is long-range awareness, and it is also what makes training parallelizable: every position's attention can be computed simultaneously rather than waiting for a sequential scan. The price is that the comparison is all-pairs — cost growing quadratically with sequence length, and a growing memory of keys and values at inference — which is the bill that Chapter 00g (KV cache, GQA, MLA) and the frontier architectures of Chapter 10 (linear hybrids, sparse attention) exist to pay down.</p>
+<h2 id="the-picture-to-keep">The picture to keep</h2>
+<p>Each token poses a question (query); every earlier token offers an advertisement (key) and a payload (value); the question is dot-producted against every advertisement, scaled by √d, softmaxed into proportions, and the proportions blend the payloads into a single contribution folded back into the token's representation. Run it in parallel across many specialized heads, mask out the future, and you have the one mechanism through which any information ever crosses between positions — the mechanism that makes every capability involving <em>combining context</em> possible at all.</p>
+</article>
+<nav class="pn"><a href="00a-tokens-tokenizers-embeddings.html"><span class="lbl">← previous</span>00a · Tokens, Tokenizers & Embeddings</a><a href="00c-mlps-and-the-stack.html" style="text-align:right"><span class="lbl">next →</span>00c · MLPs & the Stack</a></nav>
+<footer class="colo">Understanding LLMs · figures generated for this edition · June 2026</footer>
+</main></div></body></html>

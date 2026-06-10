@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Position: Why Order Must Be Injected, and RoPE · Understanding LLMs</title>
+<link rel="stylesheet" href="style.css"></head><body>
+<nav class="toc" aria-label="Course contents">
+<a class="site" href="index.html"><strong>Understanding LLMs</strong><br>the complete course</a>
+<h3>Part I · The Forward Pass</h3><ol>
+<li><a href="00a-tokens-tokenizers-embeddings.html"><span class="code">00a</span><span>Tokens, Tokenizers & Embeddings</span></a></li>
+<li><a href="00b-attention.html"><span class="code">00b</span><span>Attention</span></a></li>
+<li><a href="00c-mlps-and-the-stack.html"><span class="code">00c</span><span>MLPs & the Stack</span></a></li>
+<li><a class="cur" href="00d-position-and-rope.html"><span class="code">00d</span><span>Position & RoPE</span></a></li>
+<li><a href="00e-residuals-and-normalization.html"><span class="code">00e</span><span>Residuals & Normalization</span></a></li>
+<li><a href="00f-logits-softmax-decoding.html"><span class="code">00f</span><span>Logits, Softmax & Decoding</span></a></li>
+<li><a href="00g-attention-variants-kv-cache.html"><span class="code">00g</span><span>Attention Variants & the KV Cache</span></a></li>
+</ol>
+<h3>Part II · Training & Alignment</h3><ol>
+<li><a href="01-how-training-works.html"><span class="code">01</span><span>How Training Works</span></a></li>
+<li><a href="02-pretraining-at-scale.html"><span class="code">02</span><span>Pretraining at Scale</span></a></li>
+<li><a href="03-post-training.html"><span class="code">03</span><span>Post-Training</span></a></li>
+<li><a href="04-reasoning-and-test-time-compute.html"><span class="code">04</span><span>Reasoning & Test-Time Compute</span></a></li>
+</ol>
+<h3>Part III · Efficiency & Deployment</h3><ol>
+<li><a href="05-mixture-of-experts.html"><span class="code">05</span><span>Mixture of Experts</span></a></li>
+<li><a href="06-quantization-and-local-inference.html"><span class="code">06</span><span>Quantization & Local Inference</span></a></li>
+<li><a href="07-serving-mechanics.html"><span class="code">07</span><span>Serving Mechanics</span></a></li>
+</ol>
+<h3>Part IV · Application & Assessment</h3><ol>
+<li><a href="08-adapting-and-extending.html"><span class="code">08</span><span>Adapting & Extending Models</span></a></li>
+<li><a href="09-capabilities-limits-evaluation.html"><span class="code">09</span><span>Capabilities, Limits & Evaluation</span></a></li>
+</ol>
+<h3>Part V · Beyond Text</h3><ol>
+<li><a href="09a-image-generation-diffusion.html"><span class="code">09a</span><span>Image Generation & Diffusion</span></a></li>
+<li><a href="09b-generative-paradigms.html"><span class="code">09b</span><span>The Wider Generative Landscape</span></a></li>
+<li><a href="09c-time-series-and-finance.html"><span class="code">09c</span><span>Time Series, Econometrics & Trading</span></a></li>
+</ol>
+<h3>Part VI · The Frontier</h3><ol>
+<li><a href="10-the-frontier.html"><span class="code">10</span><span>The Frontier</span></a></li>
+</ol>
+</nav>
+<div class="page"><main class="main">
+<a class="crumb" href="index.html">← Understanding LLMs · contents</a>
+<span class="eyebrow">Part I · The Forward Pass · chapter 00d</span>
+<h1>Position: Why Order Must Be Injected, and RoPE</h1>
+<article class="content">
+<p>Look closely at attention as built in Chapter 00b and something is missing. A query at one position dot-products against keys at other positions — and nowhere does any token's actual <em>position</em> enter the computation. Position 3's key is compared to position 7's query exactly as it would be at positions 100 and 104. The dot product sees vectors; it has no idea where they came from.</p>
+<p>This makes attention <em>permutation-invariant</em>: shuffle the input tokens and you get the same outputs, reshuffled. For language this is catastrophic — "the cat ate the mouse" and "the mouse ate the cat" contain the same tokens. And note that the embedding lookup (Chapter 00a) carries no position either: every "the" gets the same row of the table wherever it sits. So the question is not how to extract position from the vectors — it isn't there — but how to <em>inject</em> it into a system that has none.</p>
+<h2 id="the-original-solution-absolute-position-embeddings">The original solution: absolute position embeddings</h2>
+<p>The 2017 transformer paper generated a fixed vector for each position — same width as the token embeddings — from a formula of sines and cosines at different frequencies, giving each position a unique, smooth fingerprint. These were simply <em>added</em> to the token embeddings once, at the bottom of the network, before the first layer. The input to layer 1 became "token vector + position vector," and the rest of the model figured out what to do with the mixture. This is <em>absolute</em> position encoding, and it works — but with three problems. It encodes the wrong thing: language structure mostly cares about <em>relative</em> offsets (the verb three tokens after its subject), not absolute indices, and the model must learn that positions (5, 8) and (100, 103) share a relationship. It extrapolates badly: trained to 2,048 tokens, positions beyond 2,048 are fingerprints the model has literally never seen, and performance collapses past the trained range. And the signal is injected once at the bottom, diluting as it propagates up through dozens of layers of mixing.</p>
+<h2 id="rope-rotation-as-position">RoPE: rotation as position</h2>
+<p><em>Rotary Position Embedding</em> (RoPE, from the 2021 RoFormer paper by Su and colleagues) solves all three with one trick, and is now standard in essentially every modern open-weight model.</p>
+<figure><img src="img/00d-rope.png" alt="Left: queries and keys rotated in proportion to position. Right: the rotations cancel down to the relative offset." loading="lazy"><figcaption><span class="fignum">Fig. 1</span> Left: queries and keys rotated in proportion to position. Right: the rotations cancel down to the relative offset.</figcaption></figure>
+<p>First, the picture of <em>rotating a vector</em>. Take a two-dimensional vector — a pair of numbers like (3, 4), an arrow from the origin. Rotating it by angle θ spins the arrow around the origin, preserving its length: a well-defined linear operation, (x, y) → (x cos θ − y sin θ, x sin θ + y cos θ).</p>
+<p>RoPE applies rotation to the <strong>query and key vectors</strong> (not the values, not the embeddings), and does so by <em>pairing up</em> their dimensions: dimensions 0–1 form one 2D pair, 2–3 the next, and so on, each pair rotated by its own angle. The design choice that encodes position: <strong>the rotation angle scales with the token's position</strong> — at position 5, every pair is rotated five times as far as at position 1. And different pairs rotate at different base <em>frequencies</em>: some pairs complete a revolution every few tokens (distinguishing nearby positions sharply), others only over thousands of tokens (distinguishing distant regions). The mix of fast and slow frequencies gives every position a distinguishable rotational signature.</p>
+<p>Where this happens matters: <em>inside the attention computation, in every layer</em>, immediately after the query and key projections are computed and before their dot product. Unlike the add-once-at-the-bottom approach, RoPE injects position fresh at every attention step — no dilution.</p>
+<h2 id="the-algebraic-payoff">The algebraic payoff</h2>
+<p>Now the property that makes this more than a stylistic variation. When attention dot-products a rotated query from position <em>m</em> against a rotated key from position <em>n</em>, a basic fact about rotations applies: rotating A by α and B by β and then taking their dot product is equivalent to rotating A alone by α − β. The two rotations partially cancel; only their <em>difference</em> survives. Since RoPE's angles are proportional to position, the difference is proportional to <strong>m − n</strong> — and so the attention score depends only on the <em>relative offset</em> between the two tokens, not their absolute positions.</p>
+<p>This is exactly what language wanted. Relative-offset awareness is no longer something the model must learn around an absolute scheme; the architecture hands it over for free, baked into the very operation at the heart of attention. The consequences follow directly. <em>Extrapolation improves dramatically</em>: a model trained on 2,048-token sequences has seen every relative offset up to ±2,048, and those same offsets recur locally inside any longer sequence, so longer contexts are far less alien than a parade of never-seen absolute fingerprints. <em>No dilution</em>: position is re-applied at every layer.</p>
+<h2 id="long-context-extensions">Long-context extensions</h2>
+<p>RoPE has limits when pushed far beyond its training length — the slow-frequency pairs enter angle ranges never seen — and a small ecosystem of fixes exists, worth recognizing by name because they appear in every model card. Raising the <em>base frequency</em> (the "theta" parameter — from the original 10,000 to 500,000 or more) slows all rotations so a longer context fits within familiar angles, and is now done as standard during training for long-context models. <em>Position interpolation</em> compresses positions at inference time to squeeze a long sequence into the trained angular range, usually with a brief fine-tune. <em>YaRN</em> and NTK-aware scaling are refined versions that rescale different frequencies by different amounts, preserving the fast (local) frequencies that short-range syntax depends on while stretching the slow ones. These are the mechanisms behind the context-window numbers on model spec sheets — 128K, 1M — and behind the fine print that quality at the far end of those windows is not the same as at the near end (Chapter 9's "lost in the middle" discussion).</p>
+<h2 id="the-picture-to-keep">The picture to keep</h2>
+<p>Attention is blind to order by construction, so order must be injected. The original method added a positional fingerprint vector once at the bottom; RoPE instead rotates queries and keys — pairwise, at position-proportional angles, at multiple frequencies, freshly in every layer — and the rotation algebra makes the attention score depend only on the relative offset between tokens. The right inductive bias (relative position), delivered inside the right operation (the dot product), at every layer, with graceful extension to long contexts: three problems, one piece of elegant math, universal adoption.</p>
+</article>
+<nav class="pn"><a href="00c-mlps-and-the-stack.html"><span class="lbl">← previous</span>00c · MLPs & the Stack</a><a href="00e-residuals-and-normalization.html" style="text-align:right"><span class="lbl">next →</span>00e · Residuals & Normalization</a></nav>
+<footer class="colo">Understanding LLMs · figures generated for this edition · June 2026</footer>
+</main></div></body></html>

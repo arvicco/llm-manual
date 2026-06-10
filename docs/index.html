@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Understanding LLMs · The Complete Course</title>
+<link rel="stylesheet" href="style.css"></head><body>
+<nav class="toc" aria-label="Course contents">
+<a class="site" href="index.html"><strong>Understanding LLMs</strong><br>the complete course</a>
+<h3>Part I · The Forward Pass</h3><ol>
+<li><a href="00a-tokens-tokenizers-embeddings.html"><span class="code">00a</span><span>Tokens, Tokenizers & Embeddings</span></a></li>
+<li><a href="00b-attention.html"><span class="code">00b</span><span>Attention</span></a></li>
+<li><a href="00c-mlps-and-the-stack.html"><span class="code">00c</span><span>MLPs & the Stack</span></a></li>
+<li><a href="00d-position-and-rope.html"><span class="code">00d</span><span>Position & RoPE</span></a></li>
+<li><a href="00e-residuals-and-normalization.html"><span class="code">00e</span><span>Residuals & Normalization</span></a></li>
+<li><a href="00f-logits-softmax-decoding.html"><span class="code">00f</span><span>Logits, Softmax & Decoding</span></a></li>
+<li><a href="00g-attention-variants-kv-cache.html"><span class="code">00g</span><span>Attention Variants & the KV Cache</span></a></li>
+</ol>
+<h3>Part II · Training & Alignment</h3><ol>
+<li><a href="01-how-training-works.html"><span class="code">01</span><span>How Training Works</span></a></li>
+<li><a href="02-pretraining-at-scale.html"><span class="code">02</span><span>Pretraining at Scale</span></a></li>
+<li><a href="03-post-training.html"><span class="code">03</span><span>Post-Training</span></a></li>
+<li><a href="04-reasoning-and-test-time-compute.html"><span class="code">04</span><span>Reasoning & Test-Time Compute</span></a></li>
+</ol>
+<h3>Part III · Efficiency & Deployment</h3><ol>
+<li><a href="05-mixture-of-experts.html"><span class="code">05</span><span>Mixture of Experts</span></a></li>
+<li><a href="06-quantization-and-local-inference.html"><span class="code">06</span><span>Quantization & Local Inference</span></a></li>
+<li><a href="07-serving-mechanics.html"><span class="code">07</span><span>Serving Mechanics</span></a></li>
+</ol>
+<h3>Part IV · Application & Assessment</h3><ol>
+<li><a href="08-adapting-and-extending.html"><span class="code">08</span><span>Adapting & Extending Models</span></a></li>
+<li><a href="09-capabilities-limits-evaluation.html"><span class="code">09</span><span>Capabilities, Limits & Evaluation</span></a></li>
+</ol>
+<h3>Part V · Beyond Text</h3><ol>
+<li><a href="09a-image-generation-diffusion.html"><span class="code">09a</span><span>Image Generation & Diffusion</span></a></li>
+<li><a href="09b-generative-paradigms.html"><span class="code">09b</span><span>The Wider Generative Landscape</span></a></li>
+<li><a href="09c-time-series-and-finance.html"><span class="code">09c</span><span>Time Series, Econometrics & Trading</span></a></li>
+</ol>
+<h3>Part VI · The Frontier</h3><ol>
+<li><a href="10-the-frontier.html"><span class="code">10</span><span>The Frontier</span></a></li>
+</ol>
+</nav>
+<div class="page"><main class="main">
+<header class="hero">
+<span class="kicker">a complete course · 21 chapters · 36 figures</span>
+<h1>Understanding LLMs</h1>
+<p>From the first byte of a tokenizer to the research frontier: the forward pass, training and alignment,
+efficiency and deployment, application and honest assessment — in deep, first-principles prose,
+every acronym expanded, every claim with its numbers.</p>
+<p class="sub">The vertical line is the residual stream — the course's central mental model.
+Each node is a chapter writing into it. Start at 00a, or jump anywhere; every chapter stands alone.</p>
+</header>
+<section class="part"><h2>Part I</h2><p class="ptitle">The Forward Pass</p><ol class="chl"><li><a href="00a-tokens-tokenizers-embeddings.html"><span class="code">00a</span><span class="t">Tokens, Tokenizers & Embeddings</span><span class="d">text → IDs → vectors</span></a></li><li><a href="00b-attention.html"><span class="code">00b</span><span class="t">Attention</span><span class="d">the only cross-position mechanism</span></a></li><li><a href="00c-mlps-and-the-stack.html"><span class="code">00c</span><span class="t">MLPs & the Stack</span><span class="d">where the knowledge lives</span></a></li><li><a href="00d-position-and-rope.html"><span class="code">00d</span><span class="t">Position & RoPE</span><span class="d">order, injected by rotation</span></a></li><li><a href="00e-residuals-and-normalization.html"><span class="code">00e</span><span class="t">Residuals & Normalization</span><span class="d">the glue of depth</span></a></li><li><a href="00f-logits-softmax-decoding.html"><span class="code">00f</span><span class="t">Logits, Softmax & Decoding</span><span class="d">from scores to chosen words</span></a></li><li><a href="00g-attention-variants-kv-cache.html"><span class="code">00g</span><span class="t">Attention Variants & the KV Cache</span><span class="d">the memory of generation</span></a></li></ol></section><section class="part"><h2>Part II</h2><p class="ptitle">Training & Alignment</p><ol class="chl"><li><a href="01-how-training-works.html"><span class="code">01</span><span class="t">How Training Works</span><span class="d">loss, gradients, backprop</span></a></li><li><a href="02-pretraining-at-scale.html"><span class="code">02</span><span class="t">Pretraining at Scale</span><span class="d">data, parallelism, scaling laws</span></a></li><li><a href="03-post-training.html"><span class="code">03</span><span class="t">Post-Training</span><span class="d">SFT, RLHF, DPO</span></a></li><li><a href="04-reasoning-and-test-time-compute.html"><span class="code">04</span><span class="t">Reasoning & Test-Time Compute</span><span class="d">RLVR and thinking budgets</span></a></li></ol></section><section class="part"><h2>Part III</h2><p class="ptitle">Efficiency & Deployment</p><ol class="chl"><li><a href="05-mixture-of-experts.html"><span class="code">05</span><span class="t">Mixture of Experts</span><span class="d">store the total, pay the active</span></a></li><li><a href="06-quantization-and-local-inference.html"><span class="code">06</span><span class="t">Quantization & Local Inference</span><span class="d">4-bit and the bandwidth ceiling</span></a></li><li><a href="07-serving-mechanics.html"><span class="code">07</span><span class="t">Serving Mechanics</span><span class="d">batching, paging, speculation</span></a></li></ol></section><section class="part"><h2>Part IV</h2><p class="ptitle">Application & Assessment</p><ol class="chl"><li><a href="08-adapting-and-extending.html"><span class="code">08</span><span class="t">Adapting & Extending Models</span><span class="d">LoRA, RAG, tools, agents</span></a></li><li><a href="09-capabilities-limits-evaluation.html"><span class="code">09</span><span class="t">Capabilities, Limits & Evaluation</span><span class="d">hallucination, benchmarks, interpretability</span></a></li></ol></section><section class="part"><h2>Part V</h2><p class="ptitle">Beyond Text</p><ol class="chl"><li><a href="09a-image-generation-diffusion.html"><span class="code">09a</span><span class="t">Image Generation & Diffusion</span><span class="d">denoising as generation</span></a></li><li><a href="09b-generative-paradigms.html"><span class="code">09b</span><span class="t">The Wider Generative Landscape</span><span class="d">GANs to NeRFs to policies</span></a></li><li><a href="09c-time-series-and-finance.html"><span class="code">09c</span><span class="t">Time Series, Econometrics & Trading</span><span class="d">GARCH to LLM feature pipelines</span></a></li></ol></section><section class="part"><h2>Part VI</h2><p class="ptitle">The Frontier</p><ol class="chl"><li><a href="10-the-frontier.html"><span class="code">10</span><span class="t">The Frontier</span><span class="d">where the field is moving</span></a></li></ol></section>
+<footer class="colo">Understanding LLMs · static site, no scripts, serves from any directory · June 2026</footer>
+</main></div></body></html>

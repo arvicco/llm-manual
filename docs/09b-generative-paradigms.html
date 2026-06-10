@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Beyond Text II: The Wider Generative Landscape · Understanding LLMs</title>
+<link rel="stylesheet" href="style.css"></head><body>
+<nav class="toc" aria-label="Course contents">
+<a class="site" href="index.html"><strong>Understanding LLMs</strong><br>the complete course</a>
+<h3>Part I · The Forward Pass</h3><ol>
+<li><a href="00a-tokens-tokenizers-embeddings.html"><span class="code">00a</span><span>Tokens, Tokenizers & Embeddings</span></a></li>
+<li><a href="00b-attention.html"><span class="code">00b</span><span>Attention</span></a></li>
+<li><a href="00c-mlps-and-the-stack.html"><span class="code">00c</span><span>MLPs & the Stack</span></a></li>
+<li><a href="00d-position-and-rope.html"><span class="code">00d</span><span>Position & RoPE</span></a></li>
+<li><a href="00e-residuals-and-normalization.html"><span class="code">00e</span><span>Residuals & Normalization</span></a></li>
+<li><a href="00f-logits-softmax-decoding.html"><span class="code">00f</span><span>Logits, Softmax & Decoding</span></a></li>
+<li><a href="00g-attention-variants-kv-cache.html"><span class="code">00g</span><span>Attention Variants & the KV Cache</span></a></li>
+</ol>
+<h3>Part II · Training & Alignment</h3><ol>
+<li><a href="01-how-training-works.html"><span class="code">01</span><span>How Training Works</span></a></li>
+<li><a href="02-pretraining-at-scale.html"><span class="code">02</span><span>Pretraining at Scale</span></a></li>
+<li><a href="03-post-training.html"><span class="code">03</span><span>Post-Training</span></a></li>
+<li><a href="04-reasoning-and-test-time-compute.html"><span class="code">04</span><span>Reasoning & Test-Time Compute</span></a></li>
+</ol>
+<h3>Part III · Efficiency & Deployment</h3><ol>
+<li><a href="05-mixture-of-experts.html"><span class="code">05</span><span>Mixture of Experts</span></a></li>
+<li><a href="06-quantization-and-local-inference.html"><span class="code">06</span><span>Quantization & Local Inference</span></a></li>
+<li><a href="07-serving-mechanics.html"><span class="code">07</span><span>Serving Mechanics</span></a></li>
+</ol>
+<h3>Part IV · Application & Assessment</h3><ol>
+<li><a href="08-adapting-and-extending.html"><span class="code">08</span><span>Adapting & Extending Models</span></a></li>
+<li><a href="09-capabilities-limits-evaluation.html"><span class="code">09</span><span>Capabilities, Limits & Evaluation</span></a></li>
+</ol>
+<h3>Part V · Beyond Text</h3><ol>
+<li><a href="09a-image-generation-diffusion.html"><span class="code">09a</span><span>Image Generation & Diffusion</span></a></li>
+<li><a class="cur" href="09b-generative-paradigms.html"><span class="code">09b</span><span>The Wider Generative Landscape</span></a></li>
+<li><a href="09c-time-series-and-finance.html"><span class="code">09c</span><span>Time Series, Econometrics & Trading</span></a></li>
+</ol>
+<h3>Part VI · The Frontier</h3><ol>
+<li><a href="10-the-frontier.html"><span class="code">10</span><span>The Frontier</span></a></li>
+</ol>
+</nav>
+<div class="page"><main class="main">
+<a class="crumb" href="index.html">← Understanding LLMs · contents</a>
+<span class="eyebrow">Part V · Beyond Text · chapter 09b</span>
+<h1>Beyond Text II: The Wider Generative Landscape</h1>
+<article class="content">
+<p>Autoregressive transformers (the core course) and diffusion (Chapter 09a) dominate the headlines, but they are two members of a larger family. This chapter maps the rest: alternative <em>architectures</em> for sequence modeling, alternative <em>mathematical families</em> of generative model, and paradigms for structurally different kinds of output. Several of these feed directly into Chapter 10's frontier; the others are worth knowing so that the current transformer-plus-diffusion consolidation reads as a moment in a wider space, not the whole space.</p>
+<figure><img src="img/09b-map.png" alt="The wider map: two paradigms dominate production; the rest survive where their particular strength is the point." loading="lazy"><figcaption><span class="fignum">Fig. 1</span> The wider map: two paradigms dominate production; the rest survive where their particular strength is the point.</figcaption></figure>
+<h2 id="alternative-sequence-architectures-state-space-models-and-kin">Alternative sequence architectures: state space models and kin</h2>
+<p>Same task as the text transformer — predict the next element of a sequence — different machinery. The leading line is <em>state space models</em> (SSMs), best known through <strong>Mamba</strong> (2023). Inspired by classical control theory, an SSM maintains a small fixed-size hidden state that evolves recurrently through the sequence, with a learned, input-dependent rule for what to remember and forget. The mathematics is arranged so the recurrence can be computed in parallel during training (via an efficient scan) while inference needs only the constant-size state update per token — linear cost in sequence length, versus attention's quadratic, and <em>no KV cache at all</em> (contrast Chapter 00g). The historical weakness is exact recall: a fixed-size state is a lossy summary, and pure SSMs underperform transformers at retrieving specific details from long contexts. The resolution — hybrid stacks interleaving a minority of attention layers among SSM or linear-attention layers — was a research curiosity when first explored (Jamba, Zamba) and is now production reality (Nemotron 3, Qwen's recent generations, and the rest of the roster covered in Chapter 10, which treats this as the live frontier it has become). Related lineages worth recognizing by name: <em>linear attention</em> variants (approximating softmax attention at linear cost — the Gated DeltaNet family is the current state of the art), <em>RWKV</em> (trainable in parallel like a transformer, runnable as a constant-cost recurrent network), and the broader observation that these are, mathematically, neural-network-parameterized descendants of the classical state-space/Kalman tradition that Chapter 09c meets again in econometrics.</p>
+<h2 id="alternative-generative-families">Alternative generative families</h2>
+<p>Four mathematically distinct ways to build a generative model, each with a different answer to "what is learned, and how do you sample."</p>
+<p><strong>GANs</strong> (Generative Adversarial Networks, 2014) ruled image generation before diffusion. Two networks train in an arms race: a <em>generator</em> maps random noise to images; a <em>discriminator</em> classifies images as real or generated; each improves by beating the other. GANs produce sharp images and — unlike diffusion's 20–50 steps — generate in a <em>single</em> forward pass, but the adversarial dynamic is unstable, <em>mode collapse</em> (the generator finding a few discriminator-fooling patterns and abandoning diversity) is chronic, and there is no principled likelihood. Displaced by diffusion for general generation; still competitive for faces (StyleGAN), real-time use, and image-to-image translation.</p>
+<p><strong>VAEs</strong> (Variational Autoencoders) appeared in Chapter 09a as latent-diffusion's compressor, but are a complete generative family: an encoder maps data to a <em>distribution</em> in latent space (the "variational" part), a decoder maps latent samples back, and training maximizes a well-defined likelihood bound (the ELBO) while regularizing the latent space toward a simple prior. Clean math, stable training, structured and interpolable latents — and characteristically blurry samples, which kept pure VAEs from winning generation outright while making them indispensable infrastructure (latent diffusion, neural audio codecs, molecule design).</p>
+<p><strong>Normalizing flows</strong> build networks that are exactly <em>invertible</em> with tractable volume-change accounting, which buys the rare property of <em>exact</em> likelihoods — no bounds, no approximation — and generation by running noise backward through the inverse. The invertibility constraint limits architectural freedom and they never matched GANs or diffusion on images, but they persist in scientific applications (physics, cosmology, molecular modeling) where exact likelihoods are the point. Notably, the <em>flow matching</em> reformulation now used inside top diffusion systems (Chapter 09a) is this family's idea reborn inside the other paradigm.</p>
+<p><strong>Energy-based models</strong> are the conceptually purest: learn a single scalar <em>energy function</em> — low for plausible data, high for implausible — and sample by iteratively walking samples downhill (Markov chain Monte Carlo). Sampling cost and unreliability kept EBMs from practical victory, but the family matters because diffusion is, mathematically, its disguised success: <em>score-based</em> generative modeling — learning the gradient of log-probability and following it — is the bridge, and is why "diffusion" and "score-based" are used near-interchangeably.</p>
+<h2 id="structurally-different-outputs">Structurally different outputs</h2>
+<p>Some generation targets don't fit "a sequence or grid of tokens" at all. <strong>Neural radiance fields</strong> (NeRFs, 2020) represent a 3D scene <em>as a neural network</em>: query it with a 3D coordinate and viewing direction, get back color and density; render by integrating queries along camera rays. The model <em>is</em> the scene — a learned continuous function rather than a produced artifact — and the idea revolutionized 3D reconstruction from photos; its faster successor, <em>Gaussian splatting</em> (2023), represents scenes as clouds of fuzzy 3D Gaussians on similar principles, and the generative versions (text-to-3D) build on both. <strong>Reinforcement learning policies</strong> generate <em>action sequences</em> — game moves, robot motions, agent decisions — trained by reward from environment interaction rather than data likelihood (the machinery Chapters 3–4 adapted for language). The closest contact with generative modeling proper is <em>world models</em>: learned predictive simulators of an environment that a policy plans against — a thread that returns at the frontier as video-world-model research. <strong>Graph neural networks</strong> operate on graph-structured data, with generative variants central to drug discovery — generating candidate molecules with desired properties being among the most consequential applied uses of generative modeling outside media.</p>
+<h2 id="the-picture-to-keep">The picture to keep</h2>
+<p>The current moment's consolidation — transformers for sequences, diffusion for perception-like media — sits inside a genuinely wider space: SSM/linear hybrids contesting the sequence architecture (and winning a growing share of production models); GANs, VAEs, flows, and energy-based models as distinct generative mathematics, each surviving where its particular strengths (speed, latents, exact likelihoods, theoretical clarity) are the point; and function-valued, action-valued, and graph-valued generation as reminders that "generate" doesn't have to mean "emit tokens." The recurring pattern across all of it: pick a representation that turns your modality into vectors, then apply one of a small number of generative principles — and the representations and principles recombine far more freely than the product categories suggest.</p>
+</article>
+<nav class="pn"><a href="09a-image-generation-diffusion.html"><span class="lbl">← previous</span>09a · Image Generation & Diffusion</a><a href="09c-time-series-and-finance.html" style="text-align:right"><span class="lbl">next →</span>09c · Time Series, Econometrics & Trading</a></nav>
+<footer class="colo">Understanding LLMs · figures generated for this edition · June 2026</footer>
+</main></div></body></html>

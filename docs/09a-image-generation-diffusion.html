@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Beyond Text I: Image Generation and Diffusion · Understanding LLMs</title>
+<link rel="stylesheet" href="style.css"></head><body>
+<nav class="toc" aria-label="Course contents">
+<a class="site" href="index.html"><strong>Understanding LLMs</strong><br>the complete course</a>
+<h3>Part I · The Forward Pass</h3><ol>
+<li><a href="00a-tokens-tokenizers-embeddings.html"><span class="code">00a</span><span>Tokens, Tokenizers & Embeddings</span></a></li>
+<li><a href="00b-attention.html"><span class="code">00b</span><span>Attention</span></a></li>
+<li><a href="00c-mlps-and-the-stack.html"><span class="code">00c</span><span>MLPs & the Stack</span></a></li>
+<li><a href="00d-position-and-rope.html"><span class="code">00d</span><span>Position & RoPE</span></a></li>
+<li><a href="00e-residuals-and-normalization.html"><span class="code">00e</span><span>Residuals & Normalization</span></a></li>
+<li><a href="00f-logits-softmax-decoding.html"><span class="code">00f</span><span>Logits, Softmax & Decoding</span></a></li>
+<li><a href="00g-attention-variants-kv-cache.html"><span class="code">00g</span><span>Attention Variants & the KV Cache</span></a></li>
+</ol>
+<h3>Part II · Training & Alignment</h3><ol>
+<li><a href="01-how-training-works.html"><span class="code">01</span><span>How Training Works</span></a></li>
+<li><a href="02-pretraining-at-scale.html"><span class="code">02</span><span>Pretraining at Scale</span></a></li>
+<li><a href="03-post-training.html"><span class="code">03</span><span>Post-Training</span></a></li>
+<li><a href="04-reasoning-and-test-time-compute.html"><span class="code">04</span><span>Reasoning & Test-Time Compute</span></a></li>
+</ol>
+<h3>Part III · Efficiency & Deployment</h3><ol>
+<li><a href="05-mixture-of-experts.html"><span class="code">05</span><span>Mixture of Experts</span></a></li>
+<li><a href="06-quantization-and-local-inference.html"><span class="code">06</span><span>Quantization & Local Inference</span></a></li>
+<li><a href="07-serving-mechanics.html"><span class="code">07</span><span>Serving Mechanics</span></a></li>
+</ol>
+<h3>Part IV · Application & Assessment</h3><ol>
+<li><a href="08-adapting-and-extending.html"><span class="code">08</span><span>Adapting & Extending Models</span></a></li>
+<li><a href="09-capabilities-limits-evaluation.html"><span class="code">09</span><span>Capabilities, Limits & Evaluation</span></a></li>
+</ol>
+<h3>Part V · Beyond Text</h3><ol>
+<li><a class="cur" href="09a-image-generation-diffusion.html"><span class="code">09a</span><span>Image Generation & Diffusion</span></a></li>
+<li><a href="09b-generative-paradigms.html"><span class="code">09b</span><span>The Wider Generative Landscape</span></a></li>
+<li><a href="09c-time-series-and-finance.html"><span class="code">09c</span><span>Time Series, Econometrics & Trading</span></a></li>
+</ol>
+<h3>Part VI · The Frontier</h3><ol>
+<li><a href="10-the-frontier.html"><span class="code">10</span><span>The Frontier</span></a></li>
+</ol>
+</nav>
+<div class="page"><main class="main">
+<a class="crumb" href="index.html">← Understanding LLMs · contents</a>
+<span class="eyebrow">Part V · Beyond Text · chapter 09a</span>
+<h1>Beyond Text I: Image Generation and Diffusion</h1>
+<article class="content">
+<p>The core course described one generative paradigm: autoregressive next-token prediction. This first "beyond text" chapter covers the other paradigm that dominates a major modality — <em>diffusion</em>, the engine of modern image (and video) generation — both because the systems matter in their own right and because Chapter 10's diffusion <em>language</em> models are incomprehensible without this background. The headline: image generation works on a fundamentally different generative principle, yet is built from mostly the same architectural parts.</p>
+<h2 id="why-images-resist-autoregression">Why images resist autoregression</h2>
+<p>Text generation's unit of output is the token, and tokens are inherently sequential. An image is not: there is no natural "first pixel," and every pixel relates to every other through spatial structure, simultaneously. You <em>can</em> impose an order — generate pixels row by row — and early models did, but it fights the data's nature. Diffusion instead generates the <em>entire image at once</em>, achieving coherence through <em>temporal refinement</em> rather than spatial sequencing: start from pure random noise, and over 20–50 iterations, run a network that predicts the noise present in the current image and partially removes it, gradually revealing a coherent image. Every pixel is updated at every step.</p>
+<figure><img src="img/09a-diffusion-steps.png" alt="Generation as refinement: every pixel updated at every step, noise giving way to structure." loading="lazy"><figcaption><span class="fignum">Fig. 1</span> Generation as refinement: every pixel updated at every step, noise giving way to structure.</figcaption></figure>
+<p>Training makes the trick comprehensible: take real images, corrupt each with a randomly chosen amount of noise, and train the network to predict the noise that was added — across all noise levels. Once it can do that, inference simply runs the corruption in reverse: from 100% noise, predict-and-remove, step by step, down to 0%. The trajectory traces a path through the network's learned distribution of what real images look like. (The mathematical underpinnings connect to score matching and stochastic differential equations; the operational picture — a denoiser called iteratively — suffices here.)</p>
+<h2 id="latent-diffusion-the-vae-as-tokenizer-equivalent">Latent diffusion: the VAE as tokenizer-equivalent</h2>
+<p>Running diffusion directly on pixels is brutally expensive (a 512×512 RGB image is ~786,000 values per network call). Modern systems instead work in a compressed <em>latent space</em>. A separately-trained <em>Variational Autoencoder</em> (VAE — covered as a generative family in its own right in Chapter 09b) provides an <em>encoder</em> compressing an image ~50× into a small grid of continuous values, and a <em>decoder</em> reconstructing pixels from it, trained together so decode(encode(image)) ≈ image. Diffusion then operates entirely on these small latents; only the final clean latent is decoded to pixels. This is <em>latent diffusion</em> — introduced in 2022, popularized by Stable Diffusion, now universal. The structural analogy to the text stack: the VAE is the tokenizer-equivalent, the boundary between human-facing data and model-internal representation — except the "vocabulary" is a continuous space rather than a discrete list.</p>
+<figure><img src="img/09a-latent-diffusion.png" alt="The modern text-to-image stack: VAE compresses, a Diffusion Transformer iterates, cross-attention listens to the prompt." loading="lazy"><figcaption><span class="fignum">Fig. 2</span> The modern text-to-image stack: VAE compresses, a Diffusion Transformer iterates, cross-attention listens to the prompt.</figcaption></figure>
+<h2 id="the-denoiser-from-u-nets-to-diffusion-transformers">The denoiser: from U-Nets to Diffusion Transformers</h2>
+<p>For years the denoising network was a <em>U-Net</em> — a convolutional architecture (convolutions apply the same local pattern-detector across all positions, matching images' translation structure) that downsamples through stages and upsamples back with skip connections, operating at multiple spatial scales at once. Stable Diffusion 1–2 and the original DALL-E 2 used U-Nets. The field has since shifted to <em>Diffusion Transformers</em> (DiT, 2022): cut the latent into a grid of small patches, project each patch to a vector — exactly the embedding step of Chapter 00a, with patches as tokens — and process them with a standard transformer stack. Attention here is <em>bidirectional</em> (no causal mask — there is no left-to-right order to protect; every patch attends to every patch), and position is injected with 2D analogues of the schemes in Chapter 00d. DiTs scale better with size than U-Nets, and power Stable Diffusion 3, Flux, and the video generators (Sora, Veo — diffusion extended along the time axis).</p>
+<h2 id="conditioning-how-text-steers-the-image">Conditioning: how text steers the image</h2>
+<p>Unconditional diffusion yields random plausible images; the interesting case is text-to-image. The prompt is processed by a separate pre-trained <em>text encoder</em> (CLIP's text tower, T5, or combinations) into a sequence of embeddings, which are injected into the denoiser via <strong>cross-attention</strong>: the same mechanism as Chapter 00b, except queries come from the image patches while keys and values come from the text tokens — every patch asks its questions <em>of the prompt</em>, and relevant text content flows into the image representation at every denoising step. One practical amplifier is universal: <em>classifier-free guidance</em> — run each denoising step twice, with and without the text conditioning, and push the prediction several times further in the direction of their difference. The guidance scale (≈ 5–10 typically) trades prompt adherence against image diversity and naturalness — loosely the temperature knob of the diffusion world, alongside the choice of step count and <em>sampler</em> (DDIM, Euler, DPM-Solver), which govern the denoising trajectory itself.</p>
+<h2 id="the-contrast-and-the-hybrids">The contrast, and the hybrids</h2>
+<p>Set side by side: text models are autoregressive (one token per forward pass, causal attention, output built across many passes over a <em>growing</em> sequence); diffusion models are iterative-refinement (all positions at once, bidirectional attention, output refined across many passes over the <em>same</em> set of patches). Both are transformers inside; the role differs — directly emitting tokens versus predicting noise to subtract. Both condition on text; one by putting it in the sequence, the other by cross-attending to it.</p>
+<p>The boundary is not absolute. Autoregressive image generation exists: the original DALL-E used a <em>VQ-VAE</em> — a VAE variant whose latent space is a grid of <em>discrete</em> tokens from a learned codebook — and generated those image-tokens left to right with a standard transformer; the approach is slower and historically weaker on global coherence, but it integrates naturally with text models, and it is the basis of <em>unified multimodal</em> systems (Chameleon-style any-to-any models, natively image-generating chat models) that tokenize every modality and process it all autoregressively. Audio generation splits the same way (diffusion for sound textures; autoregressive over neural-codec tokens for music). And the newest reformulations of diffusion itself — <em>flow matching</em> / <em>rectified flow</em>, used by Flux and Stable Diffusion 3 — keep the iterative-refinement paradigm with cleaner training dynamics. The cross-pollination runs in both directions: Chapter 10's diffusion language models import this entire chapter back into text.</p>
+<h2 id="the-picture-to-keep">The picture to keep</h2>
+<p>Image generation departs from the text playbook at the paradigm level — refine everything at once from noise, rather than emit pieces in order — but is a remix of familiar components: an encoder/decoder pair playing tokenizer (the VAE), transformer blocks playing the backbone (DiT, with bidirectional attention and 2D position), attention playing the text-conditioning channel (cross-attention), and a sampler-and-guidance layer playing the decoding policy. Different objective, same parts box — which is precisely why ideas now flow freely between the two paradigms.</p>
+</article>
+<nav class="pn"><a href="09-capabilities-limits-evaluation.html"><span class="lbl">← previous</span>09 · Capabilities, Limits & Evaluation</a><a href="09b-generative-paradigms.html" style="text-align:right"><span class="lbl">next →</span>09b · The Wider Generative Landscape</a></nav>
+<footer class="colo">Understanding LLMs · figures generated for this edition · June 2026</footer>
+</main></div></body></html>
