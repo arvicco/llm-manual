@@ -6,17 +6,17 @@
 
 ## Layout
 
-The published site lives in [`docs/`](docs/) (GitHub Pages source = `main` branch, `/docs` folder):
+The site is served from the repository root (GitHub Pages source = `main` branch, `/` root):
 
-- `docs/index.html` — course table of contents
-- `docs/*.html` — chapters
-- `docs/style.css` — styles
-- `docs/img/` — figures
-- `docs/.nojekyll` — serve files as-is, skip Jekyll
+- `index.html` — course table of contents
+- `*.html` — chapters
+- `style.css` — styles
+- `img/` — figures
+- `.nojekyll` — serve files as-is, skip Jekyll
 
 ## Local preview
 
 ```sh
-cd docs && python3 -m http.server 8000
+python3 -m http.server 8000
 # then open http://localhost:8000
 ```
